@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>英文單字跟讀與發音練習</title>
+    <!-- 引入 Bootstrap 5 樣式 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; padding-top: 30px; }
+        .word-card { transition: all 0.3s; }
+        .word-card:hover { transform: translateY(-3px); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .status-badge { font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 class="text-center mb-4">🎤 英文單字跟讀練習系統</h2>
+    
+    <!-- 統計儀表板 -->
+    <div class="row text-center mb-4">
+        <div class="col-md-4 mb-2">
+            <div class="card p-3 shadow-sm">
+                <h5>練習總次數</h5>
+                <h3 id="totalCount" class="text-primary">0</h3>
+            </div>
+        </div>
+        <div class="col-md-4 mb-2">
+            <div class="card p-3 shadow-sm">
+                <h5>答對次數</h5>
+                <h3 id="correctCount" class="text-success">0</h3>
+            </div>
+        </div>
+        <div class="col-md-4 mb-2">
+            <div class="card p-3 shadow-sm">
+                <h5>正確率</h5>
+                <h3 id="accuracyRate" class="text-info">0%</h3>
+            </div>
+        </div>
+    </div>
+
+    <!-- 單字列表區 -->
+    <div class="row" id="wordListContainer">
+        <!-- 動態載入單字卡片 -->
+    </div>
+</div>
+
+<!-- 引入 Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    // 1. 單字清單資料
+    const wordsData = [
+        { word: "Apple", translation: "蘋果" },
+        { word: "Banana", translation: "香蕉" },
+        { word: "Computer", translation: "電腦" },
+        { word: "Developer", translation: "開發者" },
+        { word: "Environment", translation: "環境" },
+        { word: "Opportunity", translation: "機會" }
+    ];
+
+    // 統計數據
+    let stats = {
+        total: 0,
+        correct: 0
+    };
+
+    // 檢查瀏覽器是否支援語音辨識
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+
+    if (!SpeechRecognition) {
+        alert("您的瀏覽器不支援語音辨識功能，建議使用 Google Chrome 瀏覽器！");
+    } else {
+        recognition = new SpeechRecognition();
+        recognition.lang = 'en-US'; // 設定辨識語言為英文
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+    }
+
+    // 初始化頁面單字卡片
+    function renderWordList() {
+        const container = document.getElementById('wordListContainer');
+        container.innerHTML = '';
+
+        wordsData.forEach((item, index) => {
+            container.innerHTML += `
+                <div class="col-md-6 mb-3">
+                    <div class="card word-card p-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h4 class="mb-1 text-dark">${item.word}</h4>
+                                <p class="text-muted mb-2">${item.translation}</p>
+                                <span id="result-${index}" class="badge bg-secondary status-badge">尚未練習</span>
+                            </div>
+                            <div>
+                                <!-- 發音按鈕 -->
+                                <button class="btn btn-outline-primary btn-sm me-1" onclick="speakWord('${item.word}')">
+                                    🔊 發音
+                                </button>
+                                <!-- 錄音跟讀按鈕 -->
+                                <button id="record-btn-${index}" class="btn btn-danger btn-sm" onclick="startRecording('${item.word}', ${index})">
+                                    🎙️ 跟讀
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    }
+
+    // 2. 點擊播放正確發音 (Web Speech API - SpeechSynthesis)
+    function speakWord(word) {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel(); // 停止先前的語音
+            const utterance = new SpeechSynthesisUtterance(word);
+            utterance.lang = 'en-US';
+            utterance.rate = 0.9; // 稍微放慢語速以便學習
+            window.speechSynthesis.speak(utterance);
+        } else {
+            alert("您的瀏覽器不支援語音合成功能。");
+        }
+    }
+
+    // 3. 錄音跟讀與辨識
+    function startRecording(targetWord, index) {
+        if (!recognition) {
+            alert("語音辨識無法使用。");
+            return;
+        }
+
+        const btn = document.getElementById(`record-btn-${index}`);
+        const resultBadge = document.getElementById(`result-${index}`);
+
+        // 改變按鈕狀態提示正在聆聽
+        btn.disabled = true;
+        btn.innerText = "聆聽中...";
+        resultBadge.className = "badge bg-warning text-dark status-badge";
+        resultBadge.innerText = "請說出單字...";
+
+        recognition.start();
+
+        // 辨識結果返回
+        recognition.onresult = function(event) {
+            const transcript = event.results[0][0].transcript.trim();
+            checkResult(targetWord, transcript, index);
+        };
+
+        // 辨識結束或錯誤處理
+        recognition.onerror = function(event) {
+            resultBadge.className = "badge bg-danger status-badge";
+            resultBadge.innerText = "辨識失敗，請重試";
+            resetButton(btn, index);
+        };
+
+        recognition.onspeechend = function() {
+            recognition.stop();
+        };
+
+        recognition.onend = function() {
+            resetButton(btn, index);
+        };
+    }
+
+    function resetButton(btn, index) {
+        btn.disabled = false;
+        btn.innerText = "🎙️ 跟讀";
+    }
+
+    // 4. 比對結果與更新統計
+    function checkResult(targetWord, spokenText, index) {
+        const resultBadge = document.getElementById(`result-${index}`);
+        
+        // 轉成小寫進行不分大小寫比對
+        const isCorrect = spokenText.toLowerCase() === targetWord.toLowerCase();
+
+        stats.total++;
+        if (isCorrect) {
+            stats.correct++;
+            resultBadge.className = "badge bg-success status-badge";
+            resultBadge.innerText = `答對！(您說了: "${spokenText}")`;
+        } else {
+            resultBadge.className = "badge bg-danger status-badge";
+            resultBadge.innerText = `念錯 (您說了: "${spokenText}")`;
+        }
+
+        updateStatsUI();
+    }
+
+    // 更新統計介面
+    function updateStatsUI() {
+        document.getElementById('totalCount').innerText = stats.total;
+        document.getElementById('correctCount').innerText = stats.correct;
+        
+        const accuracy = stats.total === 0 ? 0 : Math.round((stats.correct / stats.total) * 100);
+        document.getElementById('accuracyRate').innerText = accuracy + '%';
+    }
+
+    // 頁面載入時初始化
+    window.onload = function() {
+        renderWordList();
+    };
+</script>
+
+</body>
+</html>
